@@ -10,8 +10,8 @@ import shutil
 from zipfile import ZipFile
 import tarfile
 from datetime import datetime
-
 import saga
+import requests
 
 from nmpi import nmpi_saga, nmpi_user
 
@@ -20,7 +20,7 @@ NMPI_HOST = "https://nmpi-staging.hbpneuromorphic.eu"
 #NMPI_HOST = "https://127.0.0.1:8000"
 NMPI_API = "/api/v2"
 ENTRYPOINT = NMPI_HOST + NMPI_API
-VERIFY = True
+VERIFY = False
 
 TEST_TOKEN = "boIeArQtaH1Vwibq4AnaZE91diEQASN9ZV1BO-f2tFi7dJkwowIJP6Vhcf4b6uj0HtiyshEheugRek2EDFHiNZHlZtDAVNUTypnN0CnA5yPIPqv6CaMsjuByumMdIenw"
 HARDWARE_TOKEN = "D7oyE7C8-TlwT88Xt9TyiCWwivUkes7lukaomwrfTq01RravZXeDHQhRSwSIvHACHZoJhbrxTqFr5ADe853SDvlVK9JGz8oQMqAaNUE7WH39J16sD5hFs91a0s2SGzuO"
@@ -69,22 +69,22 @@ class SlurmTest(unittest.TestCase):
             ))
         except saga.NoSuccess:
             raise unittest.SkipTest("SLURM not available")
+        self.tmpdir = os.path.join(os.getenv("TMPDIR") or "/tmp/", "nmpi-saga-test")
+        os.mkdir(self.tmpdir)
 
     def tearDown(self):
+        shutil.rmtree(self.tmpdir)
         self.job_runner.close()
 
     def test__run_job(self):
-        # in creating the temporary directory, we assume that /home is shared
-        # across cluster nodes, but /tmp probably isn't
-        tmpdir = tempfile.mkdtemp(dir=os.path.join(os.path.expanduser("~/"), "tmp"))
-        with open(os.path.join(tmpdir, "run.py"), "w") as fp:
+        with open(os.path.join(self.tmpdir, "run.py"), "w") as fp:
             fp.write(simple_test_script)
         job_desc = saga.job.Description()
-        job_desc.working_directory = tmpdir
+        job_desc.working_directory = self.tmpdir
         # job_desc.spmd_variation    = "MPI" # to be commented out if not using MPI
         job_desc.executable = "/usr/bin/python"
-        job_desc.queue = "intel"  # take from config
-        job_desc.arguments = [os.path.join(tmpdir, "run.py")]
+        job_desc.queue = os.getenv("NMPI_TEST_QUEUE") or "intel"  # take from config
+        job_desc.arguments = [os.path.join(self.tmpdir, "run.py")]
         job_desc.output = "saga_test.out"
         job_desc.error = "saga_test.err"
 
@@ -93,21 +93,16 @@ class SlurmTest(unittest.TestCase):
         job.wait()
 
         self.assertEqual(job.get_state(), saga.job.DONE)
-
-        shutil.rmtree(tmpdir)
 
     def test__run_PyNN_job(self):
-        # in creating the temporary directory, we assume that /home is shared
-        # across cluster nodes, but /tmp probably isn't
-        tmpdir = tempfile.mkdtemp(dir=os.path.join(os.path.expanduser("~/"), "tmp"))
-        with open(os.path.join(tmpdir, "run.py"), "w") as fp:
+        with open(os.path.join(self.tmpdir, "run.py"), "w") as fp:
             fp.write(simulation_test_script)
         job_desc = saga.job.Description()
-        job_desc.working_directory = tmpdir
+        job_desc.working_directory = self.tmpdir
         # job_desc.spmd_variation    = "MPI" # to be commented out if not using MPI
         job_desc.executable = os.path.join(os.path.expanduser("~/"), "env", "nmpi_saga", "bin", "python")
-        job_desc.queue = "intel"  # take from config
-        job_desc.arguments = [os.path.join(tmpdir, "run.py"), "nest"]
+        job_desc.queue = os.getenv("NMPI_TEST_QUEUE") or "intel"  # take from config
+        job_desc.arguments = [os.path.join(self.tmpdir, "run.py"), "nest"]
         job_desc.output = "saga_test.out"
         job_desc.error = "saga_test.err"
 
@@ -116,8 +111,6 @@ class SlurmTest(unittest.TestCase):
         job.wait()
 
         self.assertEqual(job.get_state(), saga.job.DONE)
-
-        shutil.rmtree(tmpdir)
 
 
 class MockSagaJob(object):
@@ -217,8 +210,11 @@ class FullStackTest(unittest.TestCase):
         self.user_client = nmpi_user.Client("testuser", token=TEST_TOKEN,
                                             job_service=ENTRYPOINT)
         self.collab_id = TEST_COLLAB
+        self.tmpdir = os.path.join(os.getenv("TMPDIR") or "/tmp/", "nmpi-saga-test")
+        os.mkdir(self.tmpdir)
 
     def tearDown(self):
+        shutil.rmtree(self.tmpdir)
         self.job_runner.close()
 
     def _submit_test_job(self):
@@ -228,7 +224,6 @@ class FullStackTest(unittest.TestCase):
             collab_id=self.collab_id)
 
     def test_all__no_input_data(self):
-        tmpdir = tempfile.mkdtemp(dir=os.path.join(os.path.expanduser("~/"), "tmp"))
         self._submit_test_job()
 
         try:
@@ -240,10 +235,10 @@ class FullStackTest(unittest.TestCase):
                 NMPI_API=NMPI_API,
                 PLATFORM_NAME="nosetest_platform",
                 VERIFY_SSL=VERIFY,
-                WORKING_DIRECTORY=tmpdir,
+                WORKING_DIRECTORY=self.tmpdir,
                 JOB_EXECUTABLE='/usr/bin/python',
-                JOB_QUEUE='intel',
-                DATA_DIRECTORY=tmpdir,
+                JOB_QUEUE=os.getenv("NMPI_TEST_QUEUE") or "intel",
+                DATA_DIRECTORY=self.tmpdir,
                 DEFAULT_PYNN_BACKEND='nest'
             ))
         except saga.NoSuccess:
@@ -251,18 +246,18 @@ class FullStackTest(unittest.TestCase):
 
         saga_job = job_runner.next()
         self.assertEqual(saga_job.get_state(), saga.job.DONE)
-        shutil.rmtree(tmpdir)
 
 
 class CodeRetrievalTest(unittest.TestCase):
 
     def setUp(self):
-        self.tmp_src_dir = tempfile.mkdtemp(dir=os.path.join(os.path.expanduser("~/"), "tmp"))
-        self.tmp_run_dir = tempfile.mkdtemp(dir=os.path.join(os.path.expanduser("~/"), "tmp"))
+        self.tmpdir = os.path.join(os.getenv("TMPDIR") or "/tmp/", "nmpi-saga-test")
+        self.tmp_src_dir = self.tmpdir
+        self.tmp_run_dir = self.tmpdir
+        os.mkdir(self.tmpdir)
 
     def tearDown(self):
-        shutil.rmtree(self.tmp_src_dir)
-        shutil.rmtree(self.tmp_run_dir)
+        shutil.rmtree(self.tmpdir)
 
     def test_get_code_zip(self):
         zipfile = os.path.join(self.tmp_src_dir, "testcode.zip")
@@ -284,8 +279,8 @@ class CodeRetrievalTest(unittest.TestCase):
             "code": "file://{}".format(zipfile)
         }
         job_runner._get_code(mock_nmpi_job, job)
-        self.assertEqual(os.listdir(self.tmp_run_dir),
-                         ["run.py", "testcode.zip"])
+        self.assertEqual(set(os.listdir(self.tmp_run_dir)),
+                         set(["run.py", "testcode.zip"]))
         with open(os.path.join(self.tmp_run_dir, "run.py")) as fp:
             self.assertEqual(fp.read(), simulation_test_script)
 
@@ -310,7 +305,7 @@ class CodeRetrievalTest(unittest.TestCase):
             "code": "file://{}".format(archive)
         }
         job_runner._get_code(mock_nmpi_job, job)
-        self.assertEqual(os.listdir(self.tmp_run_dir),
-                         ["run.py", "testcode.tar.gz"])
+        self.assertEqual(set(os.listdir(self.tmp_run_dir)),
+                         set(["run.py", "testcode.tar.gz"]))
         with open(os.path.join(self.tmp_run_dir, "run.py")) as fp:
             self.assertEqual(fp.read(), simulation_test_script)

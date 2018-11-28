@@ -28,7 +28,7 @@ import uuid
 try:
     from urlparse import urlparse
     from urllib import urlretrieve, urlencode
-except ImportError:  # Py3
+except ImportError: # Py3
     from urllib.parse import urlparse, urlencode
     from urllib.request import urlretrieve
 import errno
@@ -206,7 +206,7 @@ class Client(object):
             errmsg = request.content
         if isinstance(errmsg, bytes):
             errmsg = errmsg.decode('utf-8')
-        logger.error(errmsg)
+        # logger.error(errmsg)
         raise Exception("Error %s: %s" % (request.status_code, errmsg))
 
     def _query(self, resource_uri, verbose=False):

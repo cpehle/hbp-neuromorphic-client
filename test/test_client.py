@@ -9,18 +9,19 @@ Network access and a valid HBP Identity account are needed.
 
 import os.path
 import unittest
-
+import requests
 from nmpi import nmpi_user
-
 
 ENTRYPOINT = "https://nmpi.hbpneuromorphic.eu/api/v2/"
 TEST_SYSTEM = "nosetest_platform"
-TEST_USER = os.environ['NMPI_TEST_USER']
-TEST_PWD = os.environ['NMPI_TEST_PWD']
-TEST_USER_NONMEMBER = os.environ['NMPI_TEST_USER_NONMEMBER']
-TEST_PWD_NONMEMBER = os.environ['NMPI_TEST_PWD_NONMEMBER']
+TEST_USER = os.getenv('NMPI_TEST_USER')
+TEST_PWD = os.getenv('NMPI_TEST_PWD')
+TEST_TOKEN = os.getenv('NMPI_TEST_TOKEN')
+TEST_USER_NONMEMBER = os.getenv('NMPI_TEST_USER_NONMEMBER')
+TEST_PWD_NONMEMBER = os.getenv('NMPI_TEST_PWD_NONMEMBER')
+TEST_TOKEN_NONMEMBER = os.getenv('NMPI_TEST_TOKEN_NONMEMBER')
 TEST_COLLAB = 563
-VERIFY = True
+VERIFY = False
 
 simple_test_script = r"""
 from datetime import datetime
@@ -52,11 +53,18 @@ sim.end()
 
 def setUp():
     global member_client, nonmember_client, system_client
-    member_client = nmpi_user.Client(TEST_USER, job_service=ENTRYPOINT,
+    if TEST_PWD:
+        member_client = nmpi_user.Client(TEST_USER, job_service=ENTRYPOINT,
                                      password=TEST_PWD, verify=VERIFY)
-    nonmember_client = nmpi_user.Client(TEST_USER_NONMEMBER, job_service=ENTRYPOINT,
+    elif TEST_TOKEN:
+        member_client = nmpi_user.Client(TEST_USER, job_service=ENTRYPOINT,
+                                     token=TEST_TOKEN, verify=VERIFY)
+    if TEST_PWD_NONMEMBER:
+        nonmember_client = nmpi_user.Client(TEST_USER_NONMEMBER, job_service=ENTRYPOINT,
                                         password=TEST_PWD_NONMEMBER, verify=VERIFY)
-
+    elif TEST_TOKEN_NONMEMBER:
+        nonmember_client = nmpi_user.Client(TEST_USER_NONMEMBER, job_service=ENTRYPOINT,
+                                        token=TEST_TOKEN_NONMEMBER, verify=VERIFY)
 
 class QueueInteractionTest(unittest.TestCase):
 
